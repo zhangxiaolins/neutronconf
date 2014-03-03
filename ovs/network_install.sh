@@ -25,9 +25,10 @@ sysctl -p
 ethtool -K $DEV_EXT gro off
 
 # 3. configure neutron-server
+/etc/init.d/openvswitch-switch restart
 ovs-vsctl add-br br-ex
 ovs-vsctl add-br br-int
-ovs-vsctl add-port br-ex $DEV_ETX
+ovs-vsctl add-port br-ex $DEV_EXT
 ip=`ip addr show dev $DEV_EXT | sed -nr 's/.*inet ([^ ]+).*/\1/p'`
 ip addr del $ip dev $DEV_EXT
 ip add add $ip dev br-ex
@@ -60,12 +61,12 @@ echo -e "# overrided by xiaolin\n\
 ovs_use_veth = True\n\
 use_namespaces = True\n\
 handle_internal_only_routers = False\n\
-interface_driver = neutron.agent.linux.interface.OVSInterfaceDriver">> /etc/neutron/dhcp_agent.ini
+interface_driver = neutron.agent.linux.interface.OVSInterfaceDriver">> /etc/neutron/l3_agent.ini
 
 # metadata
 sed -i "s/# debug = False/debug = True/g" /etc/neutron/metadata_agent.ini
 sed -i "s/localhost/$AUTH_HOST/g" /etc/neutron/metadata_agent.ini
-sed -i "s/RegionOne/$$REGION/g" /etc/neutron/metadata_agent.ini
+sed -i "s/RegionOne/$REGION/g" /etc/neutron/metadata_agent.ini
 sed -i "s/%SERVICE_TENANT_NAME%/$SERVICE_TENANT_NAME/g" /etc/neutron/metadata_agent.ini
 sed -i "s/%SERVICE_USER%/$SERVICE_USER/g" /etc/neutron/metadata_agent.ini
 sed -i "s/%SERVICE_PASSWORD%/$SERVICE_PASSWORD/g" /etc/neutron/metadata_agent.ini
@@ -88,4 +89,7 @@ firewall_driver = neutron.agent.linux.iptables_firewall.OVSHybridIptablesFirewal
 
 # restart services
 cd /etc/init.d;for i in `ls neutron-*`;do service $i restart;done;cd -
+
+# echo
+echo "Please modify network/interfaces manually, then set up ha."
 

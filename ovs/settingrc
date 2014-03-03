@@ -9,4 +9,4 @@ DEV_EXT=eth1
 DEV_INT=eth0
 
 REGION=regionOne
-METADATA_PASS=m$6R>bHjaB:7aN8
+METADATA_PASS='m$6R>bHjaB:7aN8'
