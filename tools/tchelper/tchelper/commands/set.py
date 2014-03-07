@@ -18,13 +18,16 @@ class Command(command.Command):
                       help='Specify the src ip of the shaping packets')
     parser.add_option('--rate', action='store', type='string',
                       dest='rate', default='1mbit',
-                      help='Specify the rate for egress network traffic [%default]')
+                      help='Specify the rate for egress network traffic '
+                      '[%default]')
     parser.add_option('--ceil', action='store', type='string',
                       dest='ceil', default='1mbit',
-                      help='Specify the ceil for egress network traffic [%default]')
+                      help='Specify the ceil for egress network traffic '
+                      '[%default]')
     parser.add_option('--dev', action='store', type='string',
                       dest='dev', default='eth0',
-                      help='Attached to which NIC to control traffic [%default]')
+                      help='Attached to which NIC to control traffic '
+                      '[%default]')
 
     parser.usage = "%%prog %s [options]" % NAME
 
@@ -35,7 +38,7 @@ class Command(command.Command):
         rate = self.options.rate
         ceil = self.options.ceil
         src = self.options.src
-        
+
         # calling tc to shape the traffic
         tco = tc.get_tc()
         if not tco:
@@ -60,7 +63,7 @@ class Command(command.Command):
                         print "add qdisc root failed"
                     return ok
                 # add top child class for root
-                if not tco.add_class(dev, parent='1:', 
+                if not tco.add_class(dev, parent='1:',
                                      classid="1:1", rate=maxrate):
                     if self.options.debug:
                         print "add top child class for root failed"
@@ -84,28 +87,30 @@ class Command(command.Command):
                     return ok
             net = seg_ints[2]
             host = seg_ints[3]
-            
+
             # check net class
             #if not tco.get_class(dev, classid='1:%s' % net, parent='1:1'):
-            #    if not tco.add_class(dev, parent='1:1', 
+            #    if not tco.add_class(dev, parent='1:1',
             #                         classid="1:%s" % net, rate=maxrate):
             #        if self.options.debug:
             #            print "add net class failed"
             #        return ok
             #    # add qdisc for net class
-            #    if not tco.add_qdisc(dev, parent="1:%s" %net , 
+            #    if not tco.add_qdisc(dev, parent="2:%s" %net ,
             #                         qdisc_id='%s:' % net):
             #        if self.options.debug:
             #            print "add qdisc for net class failed"
             #        return ok
 
             # check class
-            if not tco.get_class(dev, parent="1:1", 
+            # TODO(xiaolin): Remove assumption that all classes are under
+            #                parent 1:1
+            if not tco.get_class(dev, parent="1:1",
                                  classid="1:%s" % host):
                 if self.options.debug:
                     print "class need be created"
                 # create a new class
-                if not tco.add_class(dev, parent="1:1", 
+                if not tco.add_class(dev, parent="1:1",
                                      classid="1:%s" % host,
                                      rate=rate, ceil=ceil, leaf=True):
                     if self.options.debug:
@@ -115,13 +120,13 @@ class Command(command.Command):
                 if self.options.debug:
                     print "class need be updated"
                 # update the class
-                if not tco.set_class(dev, parent="%s:" % net, 
-                                     classid="%s:%s" % (net, host),
+                if not tco.set_class(dev, parent="1:1",
+                                     classid="1:%s" % (host),
                                      rate=rate, ceil=ceil):
                     if self.options.debug:
                         print "update class failed"
                     return ok
-                
+
             # check filter
             if not tco.get_filter(dev, classid="1:%s" % host):
                 if self.options.debug:
@@ -130,6 +135,6 @@ class Command(command.Command):
                     if self.options.debug:
                         print "create a new filter failed"
                     return ok
-                    
+
         print ok
         return True
