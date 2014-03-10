@@ -2,9 +2,8 @@
 # Author: zhangxiaolins@gmail.com
 
 __all__ = [
-    'set',
-    'stats',
-    'unset',
+    'egress',
+    'ingress',
     'clear',
     'sync'
 ]

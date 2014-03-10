@@ -128,7 +128,8 @@ class TrafficControl:
             return None
         return classes
     
-    def get_filter(self, dev='eth0', classid='', root=False, protocol='ip'):
+    def get_filter(self, dev='eth0', classid='', root=False, protocol='ip',
+                   parent=''):
         """Get all filters for a dev under a class id
            `tc filter dev eth0`
            @param:
@@ -144,6 +145,8 @@ class TrafficControl:
         cmd = 'tc filter show dev %s protocol %s' % (dev, protocol)
         if classid:
             cmd += ' classid %s' % classid
+        elif parent:
+            cmd += ' parent %s' % parent
         elif root:
             cmd += ' root'
         proc = utils.run(cmd)
@@ -157,10 +160,11 @@ class TrafficControl:
         return filters
     
     def add_qdisc(self, dev='eth0', parent='', root=False, qdisc_id='1:', 
-                  disc='htb', defaultid=''):
+                  disc='htb', defaultid='', ingress=False):
         """Add a qdisc for a nic/dev
            `tc qdisc add dev eth0 root handle 10: htb default 10`
            `tc qdisc add dev eth0 parent 1:10 handle 10: sfq perturb 10`
+           `tc qdisc add dev eth0 handle ffff: ingress`
            @param:
             dev      : device string, e.g. eth0
             root     : root qdisc
@@ -168,20 +172,24 @@ class TrafficControl:
             major    : major number, handle name is `major:`
             disc     : discipline, default is htb
             defaultid: default classid if no filters matched
+            ingress  : if it is an ingress qdisc
         """
         if not self.check_device(dev):
             return None
         cmd = 'tc qdisc add dev %s' % dev
-        if root:
-            cmd += ' root handle %s' % qdisc_id
-        elif parent:
-            cmd += ' parent %s handle %s' % (parent, qdisc_id)
-        if disc == 'htb':
-            cmd += ' %s' % disc
-            if defaultid:
-                cmd += ' default %s' % defaultid
-        elif disc == 'sfq':
-            cmd += ' %s perturb 10' % disc
+        if ingress:
+            cmd += ' handle ffff: ingress'
+        else:
+            if root:
+                cmd += ' root handle %s' % qdisc_id
+            elif parent:
+                cmd += ' parent %s handle %s' % (parent, qdisc_id)
+            if disc == 'htb':
+                cmd += ' %s' % disc
+                if defaultid:
+                    cmd += ' default %s' % defaultid
+            elif disc == 'sfq':
+                cmd += ' %s perturb 10' % disc
         proc = utils.run(cmd)
         if (proc.wait() == 0):
             return True
@@ -237,12 +245,13 @@ class TrafficControl:
         return '%s:%s' % (seg_ints[2], seg_ints[3])
         
     def add_filter(self, dev='eth0', parent='', protocol='ip', 
-                   src='', cgroup=False, qdisc_id='10:', prio=10):
+                   src='', cgroup=False, qdisc_id='10:', prio=10, dst=''):
         """Add a filter for a qdisc, by matching src ip or cgroup
            (TODO: xiaolin): some works with flowid, others classid, rules?
            `tc filter add dev eth0 parent 1:0 protocol ip prio 10 u32 \
             match ip src 1.2.3.4 flowid 1:11`
            `tc filter add dev eth0 parent 10: protocol ip prio 10 handle 1: cgroup`
+           ``
            @param:
             dev: dev string
             parent: under which classid
@@ -264,10 +273,16 @@ class TrafficControl:
             cmd += ' protocol %s prio %s handle %s cgroup' % \
                    (protocol, prio, qdisc_id)
         else:
-            flowid = self._get_flowid(src)
-            classid = '%s%s' % (parent, flowid.split(':')[1])
-            cmd += ' protocol %s prio %s u32 match ip src %s flowid %s' % \
-                   (protocol, prio, src, classid)
+            if src:
+                flowid = self._get_flowid(src)
+                classid = '%s%s' % (parent, flowid.split(':')[1])
+                cmd += ' protocol %s prio %s u32 match ip src %s flowid %s' % \
+                       (protocol, prio, src, classid)
+            elif dst:
+                flowid = self._get_flowid(dst)
+                classid = '%s%s' % (parent, flowid.split(':')[1])
+                cmd += ' protocol %s prio %s u32 match ip dst %s flowid %s' % \
+                       (protocol, prio, dst, classid)
         proc = utils.run(cmd)
         if (proc.wait() == 0):
             return True
@@ -328,7 +343,7 @@ class TrafficControl:
         return False
     
     def del_filter(self, dev='eth0', parent='', protocol='ip', 
-                   src='', cgroup=False, qdisc_id='10:', prio=10):
+                   src='', cgroup=False, qdisc_id='10:', prio=10, dst=''):
         """Del a filter for a qdisc, cgroup or ip src
            `tc filter del dev eth0 parent 1:0 protocol ip prio 10 u32 \
             match ip src 1.2.3.4 flowid 1:11`
@@ -351,9 +366,14 @@ class TrafficControl:
             cmd += ' protocol %s prio %s handle %s cgroup' % \
                    (protocol, prio, qdisc_id)
         else:
-            flowid = _get_flowid(src)
-            cmd += ' protocol %s prio %s u32 match ip src %s flowid %s' % \
-                   (protocol, prio, src, flowid)
+            if src:
+                flowid = _get_flowid(src)
+                cmd += ' protocol %s prio %s u32 match ip src %s flowid %s' % \
+                       (protocol, prio, src, flowid)
+            elif dst:
+                flowid = _get_flowid(dst)
+                cmd += ' protocol %s prio %s u32 match ip dst %s flowid %s' % \
+                       (protocol, prio, dst, flowid)
         proc = utils.run(cmd)
         if (proc.wait() == 0):
             return True
@@ -414,11 +434,13 @@ class TrafficControl:
         return False
     
     def set_filter(self, dev='eth0', parent='', protocol='ip', 
-                   src='', cgroup=False, qdisc_id='10:', prio=10):
+                   src='', cgroup=False, qdisc_id='10:', prio=10, dst=''):
         """Set a filter for a qdisc, cgroup or ip src
            `tc filter replace dev eth0 parent 1:0 protocol ip prio 10 u32 \
             match ip src 1.2.3.4 flowid 1:11`
            `tc filter replace dev eth0 parent 10: protocol ip prio 10 handle 1: cgroup`
+           `tc filter replace dev eth0 parent 1:0 protocol ip prio 10 u32 \
+            match ip dst 1.2.3.4 flowid 1:11`
            @param:
             dev: dev string
             parent: under which classid
@@ -433,11 +455,40 @@ class TrafficControl:
         if cgroup:
             cmd += ' protocol %s prio %s handle %s cgroup' % \
                    (protocol, prio, qdisc_id)
-        else:
+        elif src:
             flowid = _get_flowid(src)
             classid = '%s%s' % (parent, flowid.split(':')[1])
-            cmd += ' protocol %s prio %s u32 match ip src %s calssid %s' % \
+            cmd += ' protocol %s prio %s u32 match ip src %s flowid %s' % \
                    (protocol, prio, src, classid)
+        elif dst:
+            flowid = _get_flowid(dst)
+            classid = '%s%s' % (parent, flowid.split(':')[1])
+            cmd += ' protocol %s prio %s u32 match ip dst %s flowid %s' % \
+                   (protocol, prio, src, classid)
+        proc = utils.run(cmd)
+        if (proc.wait() == 0):
+            return True
+        return False
+
+    def probe_ifb(self, num=2):
+        """Modprobe ifb.
+        """
+        cmd = 'modprobe ifb %s' % num
+        proc = utils.run(cmd)
+        if (proc.wait() == 0):
+            return True
+        return False
+
+    def mirror_ingress(self, dev='eth0', ifb='ifb0'):
+        """Mirror ingress traffic on `dev` to `ifb`
+           `tc filter add dev eth0 parent ffff: protocol ip \
+            u32 match u32 0 0 action mirred egress redirect dev ifb0`
+           @param:
+            dev: dev string
+            ifb: ifb device string
+        """
+        cmd = 'tc filter add dev %s parent ffff: protocol ip' % dev
+        cmd += ' u32 match u32 0 0 action mirred egress redirect dev %s' % ifb
         proc = utils.run(cmd)
         if (proc.wait() == 0):
             return True

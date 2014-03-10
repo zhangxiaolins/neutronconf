@@ -37,11 +37,10 @@ class Command(command.Command):
         else:
             # trying to find root qdisc for nic
             qdiscs = tco.get_qdisc(dev)
-            htb_root = False
             for qdisc in qdiscs:
                 if re.match('^qdisc\s*htb.*?root', qdisc):
-                    htb_root = True
-            if not htb_root:
+                    break
+            else:
                 if self.options.debug:
                     print "no qdisc root found"
                 return ok
